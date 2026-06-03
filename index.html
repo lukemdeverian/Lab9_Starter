@@ -7,19 +7,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Lab 9</title>
 
+  <!-- TrackJS — MUST be first script on the page so it instruments before any errors occur -->
+  <script src="https://cdn.trackjs.com/agent/v3/latest/t.js"></script>
+  <script>
+    window.TrackJS && TrackJS.install({
+      token: "847d6ce8dffb4fc394f27f71b935bda2"
+    });
+  </script>
+
   <style>
-    button {
-      margin: 3px;
-    }
-
-    button:hover {
-      cursor: pointer;
-    }
-
-    #first-num,
-    #second-num {
-      width: 60px;
-    }
+    button { margin: 3px; }
+    button:hover { cursor: pointer; }
+    #first-num, #second-num { width: 60px; }
 
     output {
       border: 1px solid gray;
@@ -29,10 +28,9 @@
       padding: 5px;
       width: 240px;
     }
+    output.error { color: red; border-color: red; }
 
-    main {
-      width: 800px;
-    }
+    main { width: 800px; }
 
     #error-btns {
       column-gap: 5px;
@@ -41,11 +39,24 @@
       margin-top: 30px;
       row-gap: 5px;
     }
+    #error-btns > * { padding: 8px 2px; width: 122px; }
 
-    #error-btns>* {
-      padding: 8px 2px;
-      width: 122px;
+    #global-error-log {
+      margin-top: 20px;
+      border: 1px solid #ccc;
+      padding: 10px;
+      width: 600px;
+      font-family: monospace;
+      font-size: 13px;
+      background: #fafafa;
     }
+    #global-error-log h3 { margin: 0 0 6px 0; font-size: 14px; }
+    #global-error-log .entry {
+      padding: 4px 0;
+      border-bottom: 1px dotted #ddd;
+      color: #c00;
+    }
+    #global-error-log .entry span { color: #555; }
   </style>
 </head>
 
@@ -69,40 +80,258 @@
     </form>
 
     <section id="error-btns">
-      <button>Console Log</button>
-      <button>Console Error</button>
-      <button>Console Count</button>
-      <button>Console Warn</button>
-      <button>Console Assert</button>
-      <button>Console Clear</button>
-      <button>Console Dir</button>
-      <button>Console dirxml</button>
-      <button>Console Group Start</button>
-      <button>Console Group End</button>
-      <button>Console Table</button>
-      <button>Start Timer</button>
-      <button>End Timer</button>
-      <button>Console Trace</button>
-      <button>Trigger a Global Error</button>
+      <button type="button">Console Log</button>
+      <button type="button">Console Error</button>
+      <button type="button">Console Count</button>
+      <button type="button">Console Warn</button>
+      <button type="button">Console Assert</button>
+      <button type="button">Console Clear</button>
+      <button type="button">Console Dir</button>
+      <button type="button">Console dirxml</button>
+      <button type="button">Console Group Start</button>
+      <button type="button">Console Group End</button>
+      <button type="button">Console Table</button>
+      <button type="button">Start Timer</button>
+      <button type="button">End Timer</button>
+      <button type="button">Console Trace</button>
+      <button type="button">Trigger a Global Error</button>
     </section>
+
+    <div id="global-error-log">
+      <h3>Global Error Log (window.onerror / addEventListener)</h3>
+      <p id="no-errors-yet">No global errors caught yet.</p>
+    </div>
   </main>
 
   <script>
+
+    // ── Custom Error Classes (Step 4) ────────────────────────────────────────
+
+    class ValidationError extends Error {
+      constructor(message, field, value) {
+        super(message);
+        this.name  = 'ValidationError';
+        this.field = field;
+        this.value = value;
+      }
+    }
+
+    class DivisionByZeroError extends ValidationError {
+      constructor() {
+        super('Cannot divide by zero.', 'second-num', 0);
+        this.name = 'DivisionByZeroError';
+      }
+    }
+
+
+    // ── Step 5a: window.onerror ──────────────────────────────────────────────
+    // Fires for any uncaught runtime error. Returning true suppresses the
+    // browser's default console output. In a real app you'd POST this payload
+    // to your own logging endpoint — TrackJS does this automatically for us.
+
+    window.onerror = function(message, source, lineno, colno, error) {
+      const label = error ? error.name : 'Error';
+      console.error(`[window.onerror] ${label}: ${message}`);
+      console.error('  Source:', source, '| Line:', lineno, '| Col:', colno);
+
+      // Simulate what ajaxref.com/ch2/jserrorreporter.html does:
+      // build a payload and ship it to a logging server via fetch.
+      // TrackJS intercepts and sends this automatically — shown here for clarity.
+      const payload = { message, source, lineno, colno, name: label };
+      console.log('[window.onerror] Payload that would be POSTed to server:', payload);
+
+      appendToErrorLog('window.onerror', message, source, lineno, colno);
+      return true; // prevents duplicate browser error output
+    };
+
+
+    // ── Step 5b: window.addEventListener('error') ───────────────────────────
+    // More modern API — receives a full ErrorEvent object instead of flat args.
+    // Both this AND window.onerror fire for the same error.
+
+    window.addEventListener('error', (event) => {
+      console.warn('[window addEventListener "error"]');
+      console.warn('  event.message :', event.message);
+      console.warn('  event.filename:', event.filename);
+      console.warn('  event.lineno  :', event.lineno);
+      console.warn('  event.error   :', event.error);
+    });
+
+
+    // ── Helper: show caught errors on the page ───────────────────────────────
+
+    function appendToErrorLog(source, message, file, line, col) {
+      const log = document.getElementById('global-error-log');
+      const placeholder = document.getElementById('no-errors-yet');
+      if (placeholder) placeholder.remove();
+
+      const entry = document.createElement('div');
+      entry.className = 'entry';
+      entry.innerHTML =
+        `<strong>${source}</strong>: ${message}<br>` +
+        `<span>File: ${file} &nbsp;|&nbsp; Line: ${line}, Col: ${col}</span>`;
+      log.appendChild(entry);
+    }
+
+
+    // ── Calculator (Steps 3 + 4) ─────────────────────────────────────────────
+
     let form = document.querySelector('form');
     form.addEventListener('submit', e => {
       e.preventDefault();
       let output = document.querySelector('output');
-      let firstNum = document.querySelector('#first-num').value;
-      let secondNum = document.querySelector('#second-num').value;
-      let operator = document.querySelector('#operator').value;
-      output.innerHTML = eval(`${firstNum} ${operator} ${secondNum}`);
+
+      try {
+        let firstVal  = document.querySelector('#first-num').value.trim();
+        let secondVal = document.querySelector('#second-num').value.trim();
+        let operator  = document.querySelector('#operator').value;
+
+        if (firstVal === '')
+          throw new ValidationError('First number is required.', 'first-num', firstVal);
+        if (secondVal === '')
+          throw new ValidationError('Second number is required.', 'second-num', secondVal);
+
+        let firstNum  = Number(firstVal);
+        let secondNum = Number(secondVal);
+
+        if (isNaN(firstNum))
+          throw new ValidationError(`"${firstVal}" is not a valid number.`, 'first-num', firstVal);
+        if (isNaN(secondNum))
+          throw new ValidationError(`"${secondVal}" is not a valid number.`, 'second-num', secondVal);
+
+        if (operator === '/' && secondNum === 0)
+          throw new DivisionByZeroError();
+
+        let result = eval(`${firstNum} ${operator} ${secondNum}`);
+        output.classList.remove('error');
+        output.innerHTML = result;
+        console.log(`Calculated: ${firstNum} ${operator} ${secondNum} = ${result}`);
+
+      } catch (e) {
+        output.classList.add('error');
+
+        // Also manually track caught errors with TrackJS.
+        // Uncaught errors are sent automatically; caught ones need explicit tracking.
+        if (window.TrackJS) TrackJS.track(e);
+
+        if (e instanceof DivisionByZeroError) {
+          console.error(`[${e.name}] ${e.message}`);
+          output.innerHTML = `Math Error: ${e.message}`;
+        } else if (e instanceof ValidationError) {
+          console.error(`[${e.name}] field="${e.field}" value="${e.value}" — ${e.message}`);
+          output.innerHTML = `Validation Error: ${e.message}`;
+        } else {
+          console.error(`[${e.name}] ${e.message}`);
+          output.innerHTML = `Unexpected Error: ${e.message}`;
+        }
+      } finally {
+        console.log('Calculator attempted:',
+          document.querySelector('#first-num').value,
+          document.querySelector('#operator').value,
+          document.querySelector('#second-num').value
+        );
+      }
     });
+
+
+    // ── Console demo buttons (Steps 1 & 2) ──────────────────────────────────
+
+    const sampleData = [
+      { name: 'Alice',   role: 'Engineer', salary: 95000 },
+      { name: 'Bob',     role: 'Designer', salary: 88000 },
+      { name: 'Charlie', role: 'Manager',  salary: 112000 },
+    ];
 
     let errorBtns = Array.from(document.querySelectorAll('#error-btns > button'));
 
-    // Start your code here
-    // You may move this JS to another file if you wish
+    errorBtns[0].addEventListener('click', () => {
+      console.log('Hello from console.log!');
+      console.log('Object:', { x: 10, y: 20 });
+      console.log('Array:', [1, 2, 3]);
+    });
+
+    errorBtns[1].addEventListener('click', () => {
+      console.error('Something went wrong!');
+      console.error('Failed to fetch:', new Error('Network timeout'));
+    });
+
+    errorBtns[2].addEventListener('click', () => {
+      console.count('myCounter');
+      console.count('myCounter');
+      console.count('otherCounter');
+      console.countReset('otherCounter');
+      console.count('otherCounter');
+    });
+
+    errorBtns[3].addEventListener('click', () => {
+      console.warn('API deprecated in v2.0');
+      console.warn('Low disk space: 512 MB remaining');
+    });
+
+    errorBtns[4].addEventListener('click', () => {
+      console.assert(1 + 1 === 2, 'Math is broken!');
+      console.assert(1 + 1 === 3, 'Assertion failed: 1+1 should be 2');
+      console.assert(sampleData.length > 10, 'Expected more than 10 records');
+    });
+
+    errorBtns[5].addEventListener('click', () => { console.clear(); });
+
+    errorBtns[6].addEventListener('click', () => {
+      console.dir(document.querySelector('form'));
+      console.dir({ nested: { a: 1, b: { c: 2 } } });
+    });
+
+    errorBtns[7].addEventListener('click', () => {
+      console.dirxml(document.querySelector('form'));
+      console.dirxml(document.querySelector('#error-btns'));
+    });
+
+    errorBtns[8].addEventListener('click', () => {
+      console.group('Employee Report');
+        console.log('Total:', sampleData.length);
+        console.groupCollapsed('Salaries');
+          sampleData.forEach(emp => console.log(`${emp.name}: $${emp.salary}`));
+        console.groupEnd();
+      console.log('(Press "Console Group End" to close outer group)');
+    });
+
+    errorBtns[9].addEventListener('click', () => { console.groupEnd(); });
+
+    errorBtns[10].addEventListener('click', () => {
+      console.table(sampleData);
+      console.table(sampleData, ['name', 'role']);
+    });
+
+    errorBtns[11].addEventListener('click', () => {
+      console.time('myTimer');
+      console.log('Timer started — press End Timer to stop.');
+    });
+
+    errorBtns[12].addEventListener('click', () => {
+      console.timeLog('myTimer');
+      console.timeEnd('myTimer');
+    });
+
+    errorBtns[13].addEventListener('click', () => {
+      function outer()  { middle(); }
+      function middle() { inner(); }
+      function inner()  { console.trace('Call stack:'); }
+      outer();
+    });
+
+    // ── Button 14: Trigger a Global Error ────────────────────────────────────
+    // NOT inside try/catch — bubbles to window.onerror and TrackJS automatically.
+
+    errorBtns[14].addEventListener('click', () => {
+      console.log('Triggering uncaught global error...');
+      notAFunction(); // ReferenceError — caught by window.onerror + TrackJS
+    });
+
+    // ── Manually verify TrackJS is working on page load ──────────────────────
+    // This satisfies step 3 of the TrackJS onboarding ("Check the Install").
+    // You can remove this line after the dashboard confirms receipt.
+    if (window.TrackJS) TrackJS.track('Testing TrackJS — Lab 9 page loaded!');
+
   </script>
 </body>
-
 </html>
