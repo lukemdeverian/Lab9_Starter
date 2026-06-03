@@ -7,7 +7,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Lab 9</title>
 
-  <!-- TrackJS — MUST be first script on the page so it instruments before any errors occur -->
   <script src="https://cdn.trackjs.com/agent/v3/latest/t.js"></script>
   <script>
     window.TrackJS && TrackJS.install({
@@ -105,7 +104,7 @@
 
   <script>
 
-    // ── Custom Error Classes (Step 4) ────────────────────────────────────────
+    // ── Custom Error Classes Step 4 ────────────────────────────────────────
 
     class ValidationError extends Error {
       constructor(message, field, value) {
@@ -125,18 +124,12 @@
 
 
     // ── Step 5a: window.onerror ──────────────────────────────────────────────
-    // Fires for any uncaught runtime error. Returning true suppresses the
-    // browser's default console output. In a real app you'd POST this payload
-    // to your own logging endpoint — TrackJS does this automatically for us.
 
     window.onerror = function(message, source, lineno, colno, error) {
       const label = error ? error.name : 'Error';
       console.error(`[window.onerror] ${label}: ${message}`);
       console.error('  Source:', source, '| Line:', lineno, '| Col:', colno);
 
-      // Simulate what ajaxref.com/ch2/jserrorreporter.html does:
-      // build a payload and ship it to a logging server via fetch.
-      // TrackJS intercepts and sends this automatically — shown here for clarity.
       const payload = { message, source, lineno, colno, name: label };
       console.log('[window.onerror] Payload that would be POSTed to server:', payload);
 
@@ -146,8 +139,6 @@
 
 
     // ── Step 5b: window.addEventListener('error') ───────────────────────────
-    // More modern API — receives a full ErrorEvent object instead of flat args.
-    // Both this AND window.onerror fire for the same error.
 
     window.addEventListener('error', (event) => {
       console.warn('[window addEventListener "error"]');
@@ -316,16 +307,12 @@
     });
 
     // ── Button 14: Trigger a Global Error ────────────────────────────────────
-    // NOT inside try/catch — bubbles to window.onerror and TrackJS automatically.
-
     errorBtns[14].addEventListener('click', () => {
       console.log('Triggering uncaught global error...');
       notAFunction(); // ReferenceError — caught by window.onerror + TrackJS
     });
 
     // ── Manually verify TrackJS is working on page load ──────────────────────
-    // This satisfies step 3 of the TrackJS onboarding ("Check the Install").
-    // You can remove this line after the dashboard confirms receipt.
     if (window.TrackJS) TrackJS.track('Testing TrackJS — Lab 9 page loaded!');
 
   </script>
